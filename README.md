@@ -24,9 +24,10 @@ that data lives. The first step of any data inventory is finding Indian
 identifiers spread across databases, exports, logs and file shares.
 
 The usual tool for this is a regex. A twelve-digit Aadhaar regex matches phone
-numbers with a country code, order IDs, bank references and epoch timestamps
-in milliseconds. A scan returns forty thousand "Aadhaar numbers", nobody can
-triage them, and the check gets switched off.
+numbers with a `91` prefix, order IDs and UPI reference numbers. Without digit
+boundaries, it also matches inside every millisecond timestamp. A scan returns
+forty thousand "Aadhaar numbers", nobody can triage them, and the check gets
+switched off.
 
 pehchaan does two things differently:
 
