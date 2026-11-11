@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pehchaan"
+version = "0.1.0"
+description = "Find Indian identifiers (Aadhaar, PAN, GSTIN, IFSC, UPI) in text, with checksum validation and context scoring"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
+keywords = ["aadhaar", "pan", "gstin", "pii", "dpdp", "india", "data-privacy"]
+authors = [{ name = "Krishna Nand Pandey", email = "licensing@krevia.in" }]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Topic :: Security",
+  "Natural Language :: English",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+pehchaan = "pehchaan.cli:main"
+
+[project.urls]
+Homepage = "https://krevia.in"
+Source = "https://github.com/krevia-in/pehchaan"
+Issues = "https://github.com/krevia-in/pehchaan/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pehchaan"]
+
+[tool.ruff]
+line-length = 100
