@@ -10,7 +10,7 @@ from .checksums import gstin_check_char, gstin_ok, verhoeff_digit, verhoeff_ok
 from .detectors import Certainty, Hit, Kind
 from .scoring import Finding, Scope, scan, scan_rows, scan_text
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "Certainty", "Finding", "Hit", "Kind", "Scope",
