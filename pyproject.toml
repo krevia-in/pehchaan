@@ -4,14 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pehchaan"
-version = "0.1.1"
+version = "0.1.2"
 description = "Find Indian identifiers (Aadhaar, PAN, GSTIN, IFSC, UPI) in text, with checksum validation and context scoring"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "AGPL-3.0-only"
 license-files = ["LICENSE"]
 keywords = ["aadhaar", "pan", "gstin", "pii", "dpdp", "india", "data-privacy"]
-authors = [{ name = "Krishna Nand Pandey", email = "licensing@krevia.in" }]
+authors = [{ name = "Krishna Nand Pandey", email = "admin@krevia.in" }]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",

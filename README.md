@@ -1,35 +1,70 @@
 # pehchaan
 
-Finds Indian identifiers in text and tells you how likely each one is to be real.
+[![PyPI](https://img.shields.io/pypi/v/pehchaan)](https://pypi.org/project/pehchaan/)
+[![Python](https://img.shields.io/pypi/pyversions/pehchaan)](https://pypi.org/project/pehchaan/)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
-Most code that does this is a regex somebody pasted from Stack Overflow. Those
-regexes fire on phone numbers, order IDs and epoch timestamps, and then somebody
-turns the whole check off because the output is noise. This library validates
-check digits where they exist and scores everything else on where it was found.
+**Find Aadhaar, PAN, GSTIN, IFSC and UPI IDs in your data, and rank each one by
+how likely it is to be real.**
 
-Handles Aadhaar, PAN, GSTIN, IFSC and UPI VPAs. No dependencies, no network
-calls, no model inference.
-
-## Install
+*pehchaan* (पहचान) means "identity", and also "recognition".
 
 ```
 pip install pehchaan
 ```
 
-## Use
+Zero dependencies. No network calls. No ML model. Pure Python, 3.10+.
+
+---
+
+## Why this exists
+
+Under India's DPDP Act, every company holding personal data has to know where
+that data lives. The first step of any data inventory is finding Indian
+identifiers spread across databases, exports, logs and file shares.
+
+The usual tool for this is a regex. A twelve-digit Aadhaar regex matches phone
+numbers with a country code, order IDs, bank references and epoch timestamps
+in milliseconds. A scan returns forty thousand "Aadhaar numbers", nobody can
+triage them, and the check gets switched off.
+
+pehchaan does two things differently:
+
+1. **It validates check digits where they exist.** Aadhaar carries a Verhoeff
+   check digit and GSTIN a base-36 checksum. A random twelve-digit number has
+   a one in ten chance of passing Verhoeff, so this alone removes about 90% of
+   the noise.
+2. **It scores every hit on where it was found.** A value in a column called
+   `CUST_PAN_NO`, next to a name and a date of birth, in production, is
+   almost certainly real. The same characters in `EXT_REF_03` on a UAT box,
+   next to the word "sample", almost certainly aren't.
+
+You get a ranked list you can work through from the top, not a pile of
+matches.
+
+## Quick start
 
 ```python
 from pehchaan import scan, Scope
 
-for f in scan("PAN: ABCPN1234F", Scope(field="CUST_PAN_NO", environment="prod")):
+row = "name Priya Nair dob 1990-04-12 mobile 9876543210 pan_no ABCPN1234F"
+
+for f in scan("ABCPN1234F",
+              Scope(container="CUSTOMERS", field="CUST_PAN_NO", environment="prod"),
+              context=row):
     print(f.score, f.hit.kind.value, f.hit.masked)
+    print(f.why)
 ```
 
 ```
-100 pan ABCXXXXX4F
+90 pan ABCXXXXX4F
+('base 40 (structural)', '+30 column CUST_PAN_NO names it', '+20 3 identity term(s) in record')
 ```
 
-Scanning a lot of rows out of a database:
+Every finding carries `why`, so a reviewer can see how the score was reached
+instead of having to trust a number.
+
+### Scanning database rows
 
 ```python
 from pehchaan import scan_rows, Scope
@@ -40,89 +75,176 @@ rows = [
     for table, column, value in cursor
 ]
 
-for f in scan_rows(rows):
+for f in scan_rows(rows):          # sorted, highest score first
     if f.score >= 70:
         print(f)
 ```
 
-From the shell:
+### Free text and files
+
+```python
+from pehchaan import scan_text
+
+for f in scan_text(open("export.txt").read()):
+    print(f)
+```
+
+`scan_text` splits on blank lines, so each paragraph or block is scored on its
+own.
+
+### Command line
 
 ```
 pehchaan --env prod customers.csv
 pehchaan --env uat --min 60 --json dump.csv > findings.json
 ```
 
-The CLI exits 2 if anything scores 70 or above, so you can gate a pipeline on it.
+For CSVs, each cell is scanned and scored against its whole row, so the
+column name and the neighbouring values both count.
 
-## Why the scores move
+The CLI exits with **2** if anything scores 70 or higher, so you can block a
+CI pipeline or a data export on it.
 
-The identifier itself is the weakest signal. These matter more:
+## What it detects
+
+| Identifier | How it is validated | Certainty | Masked as |
+| --- | --- | --- | --- |
+| Aadhaar | 12 digits, first digit 2–9, Verhoeff check digit | checksum | `XXXX XXXX 2018` |
+| GSTIN | State code (01–38, 97, 99), structure, base-36 check character | checksum | `29XXXXXXXXXX1ZY` |
+| PAN | Structure, and the 4th character must be a valid holder type | structural | `ABCXXXXX4F` |
+| IFSC | 4 letters, a literal `0`, 6 alphanumerics | structural | not masked (branch codes are public) |
+| UPI ID | `name@handle`, where the handle is a known PSP | structural | `ra***@okhdfcbank` |
+
+A PAN with all four digits the same (`AAAPA1111A`) is reported as **weak**.
+Real PANs rarely look like that, but test fixtures often do.
+
+## How scoring works
+
+The match itself is the weakest signal. Context matters more.
 
 | Signal | Effect |
 | --- | --- |
-| Column named `PAN_NO`, `aadhaar_num`, `gstin` | +30 |
-| Inline label, `PAN: ABCPN1234F` | +20 |
-| Name, DOB, address, mobile in the same record | up to +20 |
-| Words like `sample`, `fixture`, `dummy` in the record | -30 |
-| Environment or path says `uat`, `dev`, `staging` | -40 |
+| Base: checksum / structural / weak | 70 / 40 / 15 |
+| Column name names the identifier (`PAN_NO`, `aadhaar_num`, `gstin`, `vpa`) | +30 |
+| Otherwise, an inline label just before the value (`PAN: ...`) | +20 |
+| Name, DOB, address, mobile, email, etc. in the same record | +7 each, up to +20 |
+| Synthetic-data wording in the record (`sample`, `dummy`, `fixture`, `test`) | −30 |
+| Environment or source path is non-prod (`uat`, `dev`, `staging`, `qa`, ...) | −40 |
+| Aadhaar (statutory handling requirements) | +10 |
 
-The same ten characters score 100 in `VENDOR.TAX_REG_NO` and 40 in
-`ORDERS.EXT_REF_03`. That difference is the entire point of the library.
+Scores are clamped to 0–100. The same ten characters, `ABCPN1234F`, in four
+places:
 
-Context never crosses a record boundary. An early version used a sliding
-160 byte window, and one `-- test data` comment in a schema file suppressed
-every live row near it. In a discovery tool a false negative is much worse
-than a false positive, so the window is gone.
+| Where | Score |
+| --- | --- |
+| `CUSTOMERS.CUST_PAN_NO`, prod, row has name, DOB and mobile | **90** |
+| `CUSTOMERS.CUST_PAN_NO`, UAT, same row | 50 |
+| `ORDERS.EXT_REF_03`, prod, nothing else in the row | 40 |
+| A `NOTES` field that says "sample row" | 10 |
 
-## Aadhaar
+### Context never crosses a record
 
-The number is never returned, logged or stored. You get the fact of a match,
-its position, and the last four digits. That is what UIDAI permits for display.
+An early version scored each hit against a sliding 160-byte window of
+surrounding text. In testing, a single `-- test data` comment in a schema dump
+lowered the score of every live record within 160 bytes of it.
 
-If you need the full value for your own processing, read it from your own
-source. This library will not hand it to you, and that is deliberate.
+In a discovery tool, a false negative is much worse than a false positive: a
+missed identifier is data nobody knows about. So context is now limited to
+one record (a row, a cell's row, or a text block). A fixture in one record
+can't hide real data in another. There is a regression test for this.
+
+## Aadhaar is never returned in full
+
+The full Aadhaar number never leaves the detector. You get the match, its
+position and the last four digits, the same form as a masked Aadhaar. It is
+never in the result object, the `str()` output, the JSON output or the
+`why` trail, and a test checks every field.
+
+A discovery tool that logs the Aadhaar numbers it finds is itself a data
+leak. If you need the full value, read it from your own source using the
+position pehchaan gives you.
 
 ## Checksums
 
-Aadhaar uses Verhoeff, which catches every single digit error and almost every
-transposition. GSTIN uses a base 36 alternating weight sum. Both are
-implemented here and both are tested against generated fixtures.
-
-PAN has no public check digit. The fourth character is the holder type, and
-validating it against the real set removes most false positives, but a PAN can
-only ever be reported as structural, not checksum.
-
 ```python
-from pehchaan import verhoeff_ok, gstin_ok
-verhoeff_ok("364205772018")
-gstin_ok("29ABCPN1234F1ZY")
+from pehchaan import verhoeff_ok, gstin_ok, verhoeff_digit, gstin_check_char
+
+verhoeff_ok("364205772018")       # True
+gstin_ok("29ABCPN1234F1ZY")       # True
+gstin_check_char("29ABCPN1234F1Z")  # 'Y'
 ```
+
+**Verhoeff** (Aadhaar) works over the dihedral group D5. It catches every
+single-digit error and every swap of two adjacent digits, which are the two
+most common data-entry mistakes.
+
+**GSTIN** uses alternating weights of 1 and 2 over base 36, with the carry
+folded back in.
+
+**PAN** has no public check digit. Checking the holder-type character
+(P = individual, C = company, H = HUF, F = firm and so on) removes most false
+positives, but a PAN match can only ever be *structural*, never *checksum*.
+The scoring reflects that.
 
 ## Known limitations
 
-- No OCR. Scanned KYC packs and photographed forms need a text layer first.
-- Names and addresses are not detected. They need a model, not a regex, and
-  that does not belong in a zero dependency library.
-- Vernacular scripts are not handled.
-- The UPI handle list goes stale. It is a plain set in `detectors.py`, so
-  extend it in your own code or send a PR.
-- Driving licence, voter ID and passport are not covered. Formats vary by
-  issuing state and the false positive rate is not yet acceptable.
+- **No OCR.** Scanned KYC packs, PDFs without a text layer and photographed
+  forms need text extraction first.
+- **No name or address detection.** Doing that well needs a model, and this
+  library has no dependencies.
+- **Latin script only.** Identifiers written in Devanagari or other Indian
+  scripts are not matched.
+- **The UPI handle list goes stale.** New PSP handles appear all the time.
+  `HANDLES` in `pehchaan.detectors` is a plain set, so you can add to it at
+  runtime or send a PR.
+- **No passport, voter ID, driving licence or ration card yet.** Formats vary
+  by state and year, and the false-positive rate isn't good enough yet.
+- **Mobile numbers are not reported** as identifiers. On their own they are
+  too common to rank usefully. A `mobile` or `phone` column or label still
+  counts as identity context in the record.
 
 ## Licence
 
-AGPL-3.0-only. Use it, read it, fork it, ship it inside your own AGPL work.
+pehchaan is dual-licensed.
 
-If you want to use it in something closed source, there is a commercial
-licence. See [LICENSING.md](LICENSING.md).
+- **AGPL-3.0-only** (this repository). Free for any use, including commercial
+  and internal. If you modify it, or offer it as part of a network service,
+  your changes must be released under the AGPL too.
+- **Commercial licence.** Use pehchaan inside a closed-source product or
+  service without the AGPL obligations. It also includes OCR for scanned KYC
+  documents, name and address extraction, maintained handle and state tables,
+  column-name pattern packs, and support.
+
+See [LICENSING.md](LICENSING.md), or write to **admin@krevia.in**.
 
 ## Contributing
 
-Bug reports with a failing case are the most useful thing you can send. Please
-do not put real identifiers in an issue. Generate a fixture instead:
+The most useful thing you can send is a bug report with a failing case: a
+real identifier that wasn't found, or noise that scored too high.
+
+**Never put a real Aadhaar, PAN or GSTIN in an issue.** Generate a valid
+fixture instead:
 
 ```python
-from pehchaan import verhoeff_digit
+from pehchaan import verhoeff_digit, gstin_check_char
+
 prefix = "36420577201"
-print(prefix + str(verhoeff_digit(prefix)))
+print(prefix + str(verhoeff_digit(prefix)))      # valid-checksum Aadhaar
+
+first14 = "29ABCPN1234F1Z"
+print(first14 + gstin_check_char(first14))        # valid-checksum GSTIN
 ```
+
+To work on the code:
+
+```
+git clone https://github.com/krevia-in/pehchaan.git
+cd pehchaan
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+python -m pytest tests/ -v
+```
+
+---
+
+Built by [Krevia](https://krevia.in).

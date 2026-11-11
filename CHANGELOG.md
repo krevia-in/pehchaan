@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- README rewritten; corrected example scores
+- Contact address is now admin@krevia.in
+
 ## 0.1.1
 
 First release on PyPI. Same code as 0.1.0; the 0.1.0 filename was

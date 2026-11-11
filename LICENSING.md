@@ -25,7 +25,7 @@ It also comes with the things the open library deliberately leaves out:
 - Column name pattern packs built from real estates
 - Support, and written indemnity
 
-Contact: licensing@krevia.in
+Contact: admin@krevia.in
 
 ## Why AGPL and not MIT
 
