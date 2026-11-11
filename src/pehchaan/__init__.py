@@ -8,12 +8,13 @@
 
 from .checksums import gstin_check_char, gstin_ok, verhoeff_digit, verhoeff_ok
 from .detectors import Certainty, Hit, Kind
+from .redact import find, redact
 from .scoring import Finding, Scope, scan, scan_rows, scan_text
 
-__version__ = "0.1.2"
+__version__ = "0.2.0"
 
 __all__ = [
     "Certainty", "Finding", "Hit", "Kind", "Scope",
-    "gstin_check_char", "gstin_ok", "scan", "scan_rows", "scan_text",
+    "find", "gstin_check_char", "gstin_ok", "redact", "scan", "scan_rows", "scan_text",
     "verhoeff_digit", "verhoeff_ok", "__version__",
 ]

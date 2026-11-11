@@ -136,12 +136,24 @@ def scan_rows(rows: Iterable[tuple[str, Scope]]) -> list[Finding]:
 def scan_text(text: str, scope: Scope | None = None) -> list[Finding]:
     """Free text. Split on blank lines so one block cannot poison another."""
     scope = scope or Scope()
-    out, offset = [], 0
-    for chunk in re.split(r"\n\s*\n", text):
+    out = []
+    for offset, chunk in _blocks(text):
         for f in scan(chunk, scope):
             h = f.hit
             moved = Hit(h.kind, h.certainty, h.start + offset, h.end + offset,
                         h.masked, h.note)
             out.append(Finding(moved, f.scope, f.score, f.why))
-        offset += len(chunk) + 2
     return sorted(out, key=lambda f: (-f.score, f.hit.start))
+
+
+_BLANK_LINE = re.compile(r"\n\s*\n")
+
+
+def _blocks(text: str):
+    """Yield (offset, block) for each blank-line separated block, with the
+    block's true position in `text`, whatever the separator length."""
+    start = 0
+    for m in _BLANK_LINE.finditer(text):
+        yield start, text[start:m.start()]
+        start = m.end()
+    yield start, text[start:]

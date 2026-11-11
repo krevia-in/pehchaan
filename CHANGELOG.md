@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+
+- New: `redact()` and `pehchaan --redact` hide identifiers in text and files
+- Fixed: `scan_text` reported wrong positions after runs of several blank lines
+- Fixed: characters that grow when upper-cased (such as German sharp s) no longer shift positions
+
 ## 0.1.2
 
 - README rewritten; corrected example scores

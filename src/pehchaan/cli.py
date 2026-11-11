@@ -1,4 +1,4 @@
-"""pehchaan <path>... - scan files and print ranked findings."""
+"""pehchaan <path>... - scan files and print ranked findings, or hide them."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import json
 import sys
 from pathlib import Path
 
+from .redact import STYLES, find, redact
 from .scoring import Scope, scan, scan_text
 
 
@@ -33,13 +34,37 @@ def _scan_path(path: Path, env: str):
                                          environment=env))
 
 
+def _redact_files(paths: list[Path], style: str) -> int:
+    for p in paths:
+        if not p.is_file():
+            print(f"pehchaan: {p}: no such file", file=sys.stderr)
+            return 1
+    for p in paths:
+        # newline="" keeps the file's own line endings untouched
+        with p.open(encoding="utf-8", errors="replace", newline="") as fh:
+            body = fh.read()
+        out = p.with_name(f"{p.stem}.redacted{p.suffix}")
+        with out.open("w", encoding="utf-8", newline="") as fh:
+            fh.write(redact(body, style=style))
+        print(f"{out}  ({len(find(body))} hidden)", file=sys.stderr)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="pehchaan", description=__doc__)
     ap.add_argument("paths", nargs="+", type=Path)
     ap.add_argument("--env", default="", help="prod, uat, dev")
     ap.add_argument("--min", type=int, default=0, help="score floor")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--redact", action="store_true",
+                    help="write a copy of each file with identifiers hidden, "
+                         "next to the original as NAME.redacted.EXT")
+    ap.add_argument("--style", choices=STYLES, default="mask",
+                    help="with --redact: mask (default), label or full")
     args = ap.parse_args(argv)
+
+    if args.redact:
+        return _redact_files(args.paths, args.style)
 
     found = []
     for p in args.paths:

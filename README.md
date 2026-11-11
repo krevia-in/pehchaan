@@ -4,8 +4,8 @@
 [![Python](https://img.shields.io/pypi/pyversions/pehchaan)](https://pypi.org/project/pehchaan/)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
-**Find Aadhaar, PAN, GSTIN, IFSC and UPI IDs in your data, and rank each one by
-how likely it is to be real.**
+**Find Aadhaar, PAN, GSTIN and UPI IDs sitting in your data, rank how exposed
+each one is, and hide them.**
 
 *pehchaan* (पहचान) means "identity", and also "recognition".
 
@@ -19,9 +19,16 @@ Zero dependencies. No network calls. No ML model. Pure Python, 3.10+.
 
 ## Why this exists
 
-Under India's DPDP Act, every company holding personal data has to know where
-that data lives. The first step of any data inventory is finding Indian
-identifiers spread across databases, exports, logs and file shares.
+Aadhaar and PAN numbers end up in places nobody planned for: CSV exports
+emailed around, log files, support tickets, test databases copied from
+production, spreadsheets on shared drives. Each copy is one more place an
+attacker can find them, and one more place a company doesn't know it has to
+protect.
+
+You can't protect data you don't know you have. Under India's DPDP Act, every
+company holding personal data has to know where it lives. The first step is
+finding the identifiers, and the next is hiding the ones that don't need to
+be there.
 
 The usual tool for this is a regex. A twelve-digit Aadhaar regex matches phone
 numbers with a `91` prefix, order IDs and UPI reference numbers. Without digit
@@ -29,19 +36,57 @@ boundaries, it also matches inside every millisecond timestamp. A scan returns
 forty thousand "Aadhaar numbers", nobody can triage them, and the check gets
 switched off.
 
-pehchaan does two things differently:
+pehchaan does three things:
 
 1. **It validates check digits where they exist.** Aadhaar carries a Verhoeff
    check digit and GSTIN a base-36 checksum. A random twelve-digit number has
    a one in ten chance of passing Verhoeff, so this alone removes about 90% of
-   the noise.
+   the noise. On 300,000 synthetic phone numbers, order IDs and UPI reference
+   numbers, a plain 12-digit regex flagged all of them; Verhoeff flagged
+   28,623.
 2. **It scores every hit on where it was found.** A value in a column called
    `CUST_PAN_NO`, next to a name and a date of birth, in production, is
    almost certainly real. The same characters in `EXT_REF_03` on a UAT box,
-   next to the word "sample", almost certainly aren't.
+   next to the word "sample", almost certainly aren't. You get a ranked list
+   you can work through from the top, not a pile of matches.
+3. **It hides what it finds.** One command writes a copy of a file with every
+   Aadhaar, PAN, GSTIN and UPI ID masked, and everything else untouched.
 
-You get a ranked list you can work through from the top, not a pile of
-matches.
+## Hide identifiers
+
+```python
+from pehchaan import redact
+
+redact("Aadhaar 3642 0577 2018, PAN ABCPN1234F, pay priya.n@okhdfcbank")
+# 'Aadhaar XXXX XXXX 2018, PAN ABCXXXXX4F, pay pr***@okhdfcbank'
+
+redact("PAN ABCPN1234F", style="label")    # 'PAN [PAN]'
+redact("3642-0577-2018", style="full")     # 'XXXX-XXXX-XXXX'
+```
+
+From the shell, this writes `customers.redacted.csv` next to the original and
+never changes the original:
+
+```
+pehchaan --redact customers.csv
+pehchaan --redact --style label support-tickets.txt
+```
+
+```
+name,aadhaar,pan_no,upi,notes
+Priya Nair,XXXX XXXX 2018,ABCXXXXX4F,pr***@okhdfcbank,kyc done
+```
+
+| Style | Aadhaar | PAN |
+| --- | --- | --- |
+| `mask` (default) | `XXXX XXXX 2018` | `ABCXXXXX4F` |
+| `label` | `[AADHAAR]` | `[PAN]` |
+| `full` | `XXXX XXXX XXXX` | `XXXXXXXXXX` |
+
+Redaction hides everything that is detected, whatever its score. When you
+are hiding data, missing one is the failure that matters. IFSC codes are
+public bank branch codes, so they are left alone unless you pass
+`kinds=[Kind.IFSC]`.
 
 ## Quick start
 
@@ -98,6 +143,7 @@ own.
 ```
 pehchaan --env prod customers.csv
 pehchaan --env uat --min 60 --json dump.csv > findings.json
+pehchaan --redact customers.csv
 ```
 
 For CSVs, each cell is scanned and scored against its whole row, so the
@@ -200,6 +246,9 @@ The scoring reflects that.
   runtime or send a PR.
 - **No passport, voter ID, driving licence or ration card yet.** Formats vary
   by state and year, and the false-positive rate isn't good enough yet.
+- **Redaction covers text files only.** Excel, PDF and database tables need to
+  be exported to text or CSV first. Names, addresses and phone numbers are
+  not hidden.
 - **Mobile numbers are not reported** as identifiers. On their own they are
   too common to rank usefully. A `mobile` or `phone` column or label still
   counts as identity context in the record.

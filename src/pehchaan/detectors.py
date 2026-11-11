@@ -37,6 +37,18 @@ class Hit:
         return f"{self.kind.value}/{self.certainty.value} @{self.start}:{self.end} {self.masked}"
 
 
+def _upper(text: str) -> str:
+    """Upper-case without changing length, so match positions stay true.
+
+    str.upper() turns some characters into two (German sharp s becomes SS),
+    which would shift every position after it.
+    """
+    up = text.upper()
+    if len(up) == len(text):
+        return up
+    return "".join(c if len(c.upper()) != 1 else c.upper() for c in text)
+
+
 # --- aadhaar ---------------------------------------------------------------
 
 # UIDAI never issues a number starting 0 or 1. Separators are everywhere in
@@ -70,7 +82,7 @@ _PAN = re.compile(r"(?<![A-Z0-9])[A-Z]{3}([A-Z])[A-Z](\d{4})[A-Z](?![A-Z0-9])")
 
 
 def pan(text: str) -> Iterator[Hit]:
-    for m in _PAN.finditer(text.upper()):
+    for m in _PAN.finditer(_upper(text)):
         holder, digits = m.group(1), m.group(2)
         if holder not in _HOLDER:
             continue
@@ -97,7 +109,7 @@ _GSTIN = re.compile(
 
 
 def gstin(text: str) -> Iterator[Hit]:
-    for m in _GSTIN.finditer(text.upper()):
+    for m in _GSTIN.finditer(_upper(text)):
         raw = m.group(0)
         if int(m.group(1)) not in _STATES:
             continue
@@ -114,7 +126,7 @@ _IFSC = re.compile(r"(?<![A-Z0-9])([A-Z]{4})0[A-Z0-9]{6}(?![A-Z0-9])")
 
 
 def ifsc(text: str) -> Iterator[Hit]:
-    for m in _IFSC.finditer(text.upper()):
+    for m in _IFSC.finditer(_upper(text)):
         # branch codes are public, nothing to mask
         yield Hit(Kind.IFSC, Certainty.STRUCTURAL, m.start(), m.end(),
                   m.group(0), f"bank {m.group(1)}")
